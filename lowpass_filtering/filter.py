@@ -13,6 +13,7 @@ Requires: numpy, scipy, matplotlib, sounddevice
 """
 
 import sys
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -100,12 +101,18 @@ def play_and_plot(data, fs):
     else:
         audio, t_start = data.copy(), 0.0
         print("Playing whole file...")
+    duration = len(audio) / fs
+
     sd.play(audio, fs)  # non-blocking
+    t0 = time.perf_counter()  # wall-clock reference for the cursor
 
     try:
-        while sd.get_stream().active:
+        while True:
+            elapsed = time.perf_counter() - t0
+            if elapsed >= duration or not sd.get_stream().active:
+                break
             # Current playback position in seconds (absolute time axis)
-            current = t_start + (len(audio) - sd.get_stream().read_available) / fs
+            current = t_start + elapsed
             line.set_data([current, current], [-y_margin, y_margin])
             plt.pause(0.05)
         sd.wait()
