@@ -1,15 +1,16 @@
 """
-IP3 - M1: Load and play a heart sound recording.
+IP3 - M1: Load, play and visualize a heart sound recording.
 
-Plays 'heart_single_channel_physionet_49829_TV.wav' over the default
-audio output (notebook loudspeaker).
+Loads 'heart_single_channel_physionet_49829_TV.wav', plays it over the
+default audio output, and shows the amplitude as a function of time.
 
-Requires: numpy, scipy, sounddevice  (pip install sounddevice)
+Requires: numpy, scipy, matplotlib, sounddevice
 """
 
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import sounddevice as sd
 from scipy.io import wavfile
@@ -52,12 +53,30 @@ def play_audio(data, fs):
     print("Done.")
 
 
+def plot_amplitude(data, fs):
+    """Show amplitude as a function of time."""
+    t = np.arange(len(data)) / fs  # time axis in seconds
+    fig, ax = plt.subplots(figsize=(12, 4))
+    ax.plot(t, data, lw=0.5, color="tab:blue")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Amplitude [-]")
+    ax.set_title("heart_single_channel_physionet_49829_TV.wav")
+    ax.set_xlim(0, t[-1])
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    plt.show()
+
+
 def main():
     if not AUDIO_FILE.exists():
         sys.exit(f"Audio file not found: {AUDIO_FILE}\n"
                  f"Place it in the same directory as filter.py.")
     data, fs = load_audio(AUDIO_FILE)
+
+    # Play and plot. Plot first (non-blocking window stays open while
+    # sound plays), or the other way around if you prefer.
     play_audio(data, fs)
+    plot_amplitude(data, fs)
 
 
 if __name__ == "__main__":
