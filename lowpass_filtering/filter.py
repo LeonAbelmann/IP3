@@ -1,8 +1,9 @@
 """
 IP3 - M1: Load, play and visualize a heart sound recording.
 
-Loads 'heart_single_channel_physionet_49829_TV.wav', plays it over the
-default audio output, and shows the amplitude as a function of time.
+Loads 'heart_single_channel_physionet_49829_TV.wav', shows the amplitude
+as a function of time, and plays the sound over the default audio
+output while the plot is open (with a moving cursor tracking playback).
 
 Requires: numpy, scipy, matplotlib, sounddevice
 """
@@ -42,29 +43,36 @@ def load_audio(path: Path):
     return data, fs
 
 
-def play_audio(data, fs):
-    """Play audio over the default output device (blocking)."""
-    print("Playing... (Ctrl-C to stop)")
-    try:
-        sd.play(data, fs)
-        sd.wait()  # block until playback is finished
-    except KeyboardInterrupt:
-        sd.stop()
-    print("Done.")
-
-
-def plot_amplitude(data, fs):
-    """Show amplitude as a function of time."""
+def play_and_plot(data, fs):
+    """Play audio while showing the waveform with a moving playback cursor."""
     t = np.arange(len(data)) / fs  # time axis in seconds
+
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot(t, data, lw=0.5, color="tab:blue")
+    line, = ax.plot([], [], color="tab:red", lw=1.5)  # playback cursor
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Amplitude [-]")
     ax.set_title("heart_single_channel_physionet_49829_TV.wav")
     ax.set_xlim(0, t[-1])
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    plt.show()
+
+    print("Playing (close the plot window to stop)...")
+    sd.play(data, fs)  # non-blocking: playback starts in the background
+
+    try:
+        while sd.get_stream().active:
+            # Current playback position in seconds
+            current = (len(data) - sd.get_stream().read_available) / fs
+            line.set_data([current, current], [np.min(data), np.max(data)])
+            plt.pause(0.05)  # redraw while letting the GUI breathe
+        sd.wait()
+    except Exception:
+        sd.stop()
+        raise
+    finally:
+        print("Done.")
+    plt.show()  # keep the plot open after playback finishes
 
 
 def main():
@@ -72,11 +80,7 @@ def main():
         sys.exit(f"Audio file not found: {AUDIO_FILE}\n"
                  f"Place it in the same directory as filter.py.")
     data, fs = load_audio(AUDIO_FILE)
-
-    # Play and plot. Plot first (non-blocking window stays open while
-    # sound plays), or the other way around if you prefer.
-    play_audio(data, fs)
-    plot_amplitude(data, fs)
+    play_and_plot(data, fs)
 
 
 if __name__ == "__main__":
