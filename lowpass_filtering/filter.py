@@ -6,12 +6,15 @@ Butterworth bandpass filter (10-800 Hz, zero-phase via filtfilt), shows
 original and filtered amplitude as a function of time, and plays the
 sound over the default audio output while the plot is open.
 
-The display focuses on the clean section (12-25 s) and clips the
-short impulsive artifacts described in audio_description.md.
+Bode plot mode (assignment 4.2):
+    python filter.py --bode
+generates bode.pdf with the filter's amplitude (top) and phase (bottom),
+from 0 to 4 kHz.
 
 Requires: numpy, scipy, matplotlib, sounddevice
 """
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -65,21 +68,97 @@ def load_audio(path: Path):
     return data, fs
 
 
-def butterworth_bandpass(data, fs, order=ORDER, f_low=F_LOW, f_high=F_HIGH):
-    """Zero-phase Butterworth bandpass (manual section 4.2).
+def butterworth_bandpass_coefficients(fs, order=ORDER, f_low=F_LOW, f_high=F_HIGH):
+    """Design a Butterworth bandpass filter h(t) (manual section 4.2).
 
     Cutoffs are normalized by the Nyquist frequency (fs/2).
-    filtfilt applies the filter forwards and backwards -> zero phase,
-    and doubles the effective filter order.
     """
     nyquist = fs / 2.0
     low = f_low / nyquist     # e.g. 10 / 2000  = 0.005
     high = f_high / nyquist   # e.g. 800 / 2000 = 0.4
     b, a = signal.butter(order, [low, high], btype='band')
-    filtered = signal.filtfilt(b, a, data)
     print(f"Butterworth bandpass: order={order}, "
           f"cutoffs [{f_low}, {f_high}] Hz -> normalized [{low}, {high}]")
-    return filtered
+    return b, a
+
+
+def butterworth_bandpass(data, fs, order=ORDER, f_low=F_LOW, f_high=F_HIGH):
+    """Zero-phase Butterworth bandpass filtering of a signal.
+
+    filtfilt applies the filter forwards and backwards -> zero phase,
+    and doubles the effective filter order.
+    """
+    b, a = butterworth_bandpass_coefficients(fs, order, f_low, f_high)
+    return signal.filtfilt(b, a, data)
+
+
+def make_bode_plot(fs, order=ORDER, f_low=F_LOW, f_high=F_HIGH,
+                   f_max=4000.0, n_freqs=4001, pdf_path="bode.pdf"):
+    """Bode plot (amplitude top, phase bottom) of the filter h(t).
+
+    Also shows the forward-backward filter g(t) = |H|^2 (filtfilt),
+    whose phase is exactly zero. Frequencies run from 0 to f_max.
+
+    Exported to pdf_path (PDF, vector graphics).
+    """
+    b, a = butterworth_bandpass_coefficients(fs, order, f_low, f_high)
+
+    # Frequency axis 0..f_max Hz. Note: above the Nyquist frequency
+    # (fs/2) the digital filter response mirrors (aliasing).
+    f = np.linspace(0, f_max, n_freqs)
+
+    # Response of the one-pass filter h(t)
+    _, h = signal.freqz(b, a, worN=f, fs=fs, include_nyquist=True)
+    mag_h = np.abs(h)
+    phase_h = np.unwrap(np.angle(h))
+
+    # Response of the forward-backward filter g(t) = |H|^2
+    # (amplitude squared, phase exactly zero)
+    mag_g = mag_h ** 2
+
+    mag_db = 20 * np.log10(np.maximum(mag_h, 1e-12))
+    mag_g_db = 20 * np.log10(np.maximum(mag_g, 1e-12))
+    phase_deg = np.degrees(phase_h)
+
+    nyquist = fs / 2.0
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 8), sharex=True)
+
+    # --- Top: amplitude ---
+    ax1.plot(f, mag_db, color="tab:blue", label=f"h(t): order {order}")
+    ax1.plot(f, mag_g_db, color="tab:red", ls="--",
+             label=f"g(t) = filtfilt: order {2 * order}")
+    ax1.axvline(f_low, color="grey", ls=":", lw=1)
+    ax1.axvline(f_high, color="grey", ls=":", lw=1)
+    ax1.axvline(nyquist, color="black", ls="-.", lw=1,
+                label=f"Nyquist = {nyquist:.0f} Hz")
+    ax1.axhline(-3, color="grey", lw=0.5)
+    ax1.set_ylabel("Amplitude [dB]")
+    ax1.set_title(f"Butterworth bandpass {f_low:.0f}-{f_high:.0f} Hz, "
+                  f"order {order} (filtfilt: {2 * order})")
+    ax1.set_ylim(-80, 5)
+    ax1.legend(loc="lower left")
+    ax1.grid(True, alpha=0.3)
+
+    # --- Bottom: phase ---
+    ax2.plot(f, phase_deg, color="tab:blue", label="h(t) phase")
+    ax2.axvline(nyquist, color="black", ls="-.", lw=1)
+    ax2.set_xlabel("Frequency [Hz]")
+    ax2.set_ylabel("Phase [degrees]")
+    ax2.set_xlim(0, f_max)
+    ax2.legend(loc="lower left")
+    ax2.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(pdf_path)  # vector PDF export
+    print(f"Bode plot exported to {pdf_path}")
+
+    # Readout at frequencies of interest
+    for f_check in (f_low, f_high, nyquist):
+        idx = np.argmin(np.abs(f - f_check))
+        print(f"  h(t) @ {f[idx]:6.0f} Hz: {mag_db[idx]:6.1f} dB, "
+              f"phase {phase_deg[idx]:7.1f} deg   "
+              f"| g(t): {mag_g_db[idx]:6.1f} dB")
 
 
 def plot_and_play(data, filtered, fs):
@@ -148,6 +227,19 @@ def plot_and_play(data, filtered, fs):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Load, play, filter and visualize a heart sound.")
+    parser.add_argument("--bode", action="store_true",
+                        help="Generate bode.pdf (amplitude + phase, 0-4 kHz) "
+                             "and exit.")
+    parser.add_argument("--fs", type=float, default=4000.0,
+                        help="Sample rate used for the --bode plot [Hz].")
+    args = parser.parse_args()
+
+    if args.bode:
+        make_bode_plot(fs=args.fs)
+        return
+
     if not AUDIO_FILE.exists():
         sys.exit(f"Audio file not found: {AUDIO_FILE}\n"
                  f"Place it in the same directory as filter.py.")
