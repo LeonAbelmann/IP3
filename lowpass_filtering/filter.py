@@ -5,6 +5,10 @@ Loads 'heart_single_channel_physionet_49829_TV.wav', shows the amplitude
 as a function of time, and plays the sound over the default audio
 output while the plot is open (with a moving cursor tracking playback).
 
+The display focuses on the clean section (12-25 s) and clips the
+short impulsive artifacts described in audio_description.md, so the
+S1/S2 heart sounds are displayed at a proper scale.
+
 Requires: numpy, scipy, matplotlib, sounddevice
 """
 
@@ -18,6 +22,20 @@ from scipy.io import wavfile
 
 # Audio file next to this script
 AUDIO_FILE = Path(__file__).parent / "heart_single_channel_physionet_49829_TV.wav"
+
+# --- Display / playback settings -------------------------------------------
+# Clean section of the recording (seconds). The audio outside this
+# window contains short impulsive artifacts that are several times
+# larger than the heart sounds (see audio_description.md).
+SECTION = (12.0, 25.0)   # None to show/play the whole file
+
+# Amplitude clip for *display only* (data itself is not modified).
+# Artifacts are clipped; S1/S2 remain at a readable scale.
+CLIP_DISPLAY = True
+CLIP_PERCENTILE = 99.9   # robust amplitude estimate, ignores artifact spikes
+
+# Play only the displayed section (True) or the whole file (False)
+PLAY_SECTION_ONLY = True
 
 
 def load_audio(path: Path):
@@ -45,27 +63,51 @@ def load_audio(path: Path):
 
 def play_and_plot(data, fs):
     """Play audio while showing the waveform with a moving playback cursor."""
-    t = np.arange(len(data)) / fs  # time axis in seconds
+    n = len(data)
+    t = np.arange(n) / fs  # time axis in seconds
+
+    # Select the section to display
+    if SECTION is not None:
+        i0, i1 = int(SECTION[0] * fs), min(int(SECTION[1] * fs), n)
+        t_plot, x_plot = t[i0:i1], data[i0:i1]
+    else:
+        t_plot, x_plot = t, data
+
+    # Robust display limits: percentile ignores the artifact spikes
+    if CLIP_DISPLAY:
+        a_clip = np.percentile(np.abs(x_plot), CLIP_PERCENTILE)
+        y_margin = 1.2 * a_clip
+    else:
+        y_margin = 1.05 * np.max(np.abs(x_plot))
+    print(f"Display amplitude limit: +/-{y_margin:.3f} "
+          f"({'clipped' if CLIP_DISPLAY else 'full scale'})")
 
     fig, ax = plt.subplots(figsize=(12, 4))
-    ax.plot(t, data, lw=0.5, color="tab:blue")
+    ax.plot(t_plot, x_plot, lw=0.5, color="tab:blue")
     line, = ax.plot([], [], color="tab:red", lw=1.5)  # playback cursor
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Amplitude [-]")
     ax.set_title("heart_single_channel_physionet_49829_TV.wav")
-    ax.set_xlim(0, t[-1])
+    ax.set_xlim(t_plot[0], t_plot[-1])
+    ax.set_ylim(-y_margin, y_margin)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
 
-    print("Playing (close the plot window to stop)...")
-    sd.play(data, fs)  # non-blocking: playback starts in the background
+    # Choose what to play
+    if PLAY_SECTION_ONLY and SECTION is not None:
+        audio, t_start = data[i0:i1].copy(), SECTION[0]
+        print(f"Playing section {SECTION[0]}-{SECTION[1]} s only...")
+    else:
+        audio, t_start = data.copy(), 0.0
+        print("Playing whole file...")
+    sd.play(audio, fs)  # non-blocking
 
     try:
         while sd.get_stream().active:
-            # Current playback position in seconds
-            current = (len(data) - sd.get_stream().read_available) / fs
-            line.set_data([current, current], [np.min(data), np.max(data)])
-            plt.pause(0.05)  # redraw while letting the GUI breathe
+            # Current playback position in seconds (absolute time axis)
+            current = t_start + (len(audio) - sd.get_stream().read_available) / fs
+            line.set_data([current, current], [-y_margin, y_margin])
+            plt.pause(0.05)
         sd.wait()
     except Exception:
         sd.stop()
