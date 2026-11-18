@@ -86,7 +86,7 @@ def main():
 
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(THETA_GRID_DEG, Py, color="tab:blue")
-    ax.set_xlabel(" incidence angle theta [deg]   (0 = broadside)")
+    ax.set_xlabel("Incidence angle theta [deg]   (0 = broadside)")
     ax.set_ylabel("Normalized output power Py(theta) [-]")
     ax.set_title(f"Matched-beamformer spatial spectrum, M={args.M}, "
                  f"f0={args.f0:.0f} Hz, v={args.v:.0f} m/s")
