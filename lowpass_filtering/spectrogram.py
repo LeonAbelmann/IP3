@@ -27,10 +27,8 @@ from scipy.io import wavfile
 AUDIO_FILE = Path(__file__).parent / "heart_single_channel_physionet_49829_TV.wav"
 
 # --- Display settings -------------------------------------------------------
-# Time window to analyze (seconds). None = whole file.
-# (12, 25) is the clean section; the impulsive artifacts elsewhere
-# dominate the color scale of a spectrogram even more than in the
-# time-domain plot.
+# Time window to analyze (seconds). None = whole file (time axis 0..end).
+# The window is displayed on an ABSOLUTE time axis, consistent with filter.py.
 SECTION = (12.0, 25.0)
 
 # --- Filter settings (as in filter.py) --------------------------------------
@@ -77,9 +75,10 @@ def butterworth_bandpass(data, fs, order=ORDER, f_low=F_LOW, f_high=F_HIGH):
 def make_spectrogram(x, fs):
     """Spectrogram via ShortTimeFFT (manual section 4.4 recipe).
 
-    Returns (Sxx_dB in dB, t_lo, t_hi) with the frequency axis restricted
-    to 0..fs/2 (the 'centered' FFT produces -fs/2..fs/2; for a real
-    signal the halves are symmetric, so we keep f >= 0).
+    Returns (Sxx_dB in dB, t_lo, t_hi) in the LOCAL time frame of x
+    (0 .. len(x)/fs), with the frequency axis restricted to 0..fs/2
+    (the 'centered' FFT produces -fs/2..fs/2; for a real signal the
+    halves are symmetric, so we keep f >= 0).
     """
     N = len(x)
     win = ('gaussian', 1e-2 * fs)   # Gaussian window, 0.01 s std dev
@@ -89,11 +88,10 @@ def make_spectrogram(x, fs):
         fft_mode=FFT_MODE, scale_to=SCALE_TO, phase_shift=None)
 
     Sxx = SFT.spectrogram(x)        # shape (mfft, k): PSD per time slot
-    t_lo, t_hi = SFT.extent(N)[:2]  # time range of the plot
+    t_lo, t_hi = SFT.extent(N)[:2]   # time range covered (local frame)
 
     # Keep only f >= 0 half of the centered spectrum
-    f = SFT.f
-    keep = f >= 0
+    keep = SFT.f >= 0
     Sxx = Sxx[keep]
 
     # Logarithmic amplitude scale (dB), floor to avoid log(0)
@@ -101,10 +99,18 @@ def make_spectrogram(x, fs):
     return Sxx_dB, t_lo, t_hi
 
 
-def plot_spectrograms(x_orig, x_filt, fs):
-    """Two spectrograms aligned above each other, same axes and color scale."""
+def plot_spectrograms(x_orig, x_filt, fs, t_offset=0.0):
+    """Two spectrograms aligned above each other, same axes and color scale.
+
+    t_offset: add this to the local time axis of the spectrogram, so a
+    signal sliced from a longer recording is displayed on an absolute
+    time axis (e.g. 12-25 s, consistent with filter.py).
+    """
     S1, t_lo, t_hi = make_spectrogram(x_orig, fs)
     S2, _, _ = make_spectrogram(x_filt, fs)
+
+    # Absolute time extent
+    ext = (t_lo + t_offset, t_hi + t_offset, 0, fs / 2)
 
     # Shared color limits: robust against the impulsive artifacts
     # (a few very loud pixels would otherwise wash out everything else)
@@ -112,33 +118,25 @@ def plot_spectrograms(x_orig, x_filt, fs):
     vmin = vmax - 80.0   # 80 dB dynamic range
     print(f"Color scale: {vmin:.1f} to {vmax:.1f} dB")
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
-                                   sharey=True)
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(12, 8), sharex=True, sharey=True,
+        constrained_layout=True)   # handles the colorbar correctly
 
-    im1 = ax1.imshow(S1, origin='lower', aspect='auto',
-                     extent=(t_lo, t_hi, 0, fs / 2),
+    im1 = ax1.imshow(S1, origin='lower', aspect='auto', extent=ext,
                      vmin=vmin, vmax=vmax, cmap='magma')
     ax1.set_title("Spectrogram: original signal")
     ax1.set_ylabel("Frequency [Hz]")
 
-    ax2.imshow(S2, origin='lower', aspect='auto',
-               extent=(t_lo, t_hi, 0, fs / 2),
+    ax2.imshow(S2, origin='lower', aspect='auto', extent=ext,
                vmin=vmin, vmax=vmax, cmap='magma')
     ax2.set_title("Spectrogram: bandpass filtered "
                   f"({F_LOW:.0f}-{F_HIGH:.0f} Hz, zero-phase)")
     ax2.set_xlabel("Time [s]")
     ax2.set_ylabel("Frequency [Hz]")
 
-    if SECTION is not None:
-        ax1.set_xlim(*SECTION)
-        ax1.set_ylim(0, fs / 2)
+    fig.colorbar(im1, ax=[ax1, ax2], label="PSD [dB]")
 
-    fig.subplots_adjust(right=0.9)
-    cbar = fig.colorbar(im1, ax=[ax1, ax2])
-    cbar.set_label("PSD [dB]")
-
-    fig.suptitle("heart_single_channel_physionet_49829_TV.wav", y=0.995)
-    fig.tight_layout()
+    fig.suptitle("heart_single_channel_physionet_49829_TV.wav")
     plt.show()
 
 
@@ -148,14 +146,16 @@ def main():
                  f"Place it in the same directory as spectrogram.py.")
     data, fs = load_audio(AUDIO_FILE)
 
+    t_offset = 0.0
     if SECTION is not None:
         i0, i1 = int(SECTION[0] * fs), min(int(SECTION[1] * fs), len(data))
         data = data[i0:i1]
+        t_offset = SECTION[0]
         print(f"Analyzing section {SECTION[0]}-{SECTION[1]} s "
-              f"({len(data)} samples)")
+              f"({len(data)} samples), displayed on absolute time axis")
 
     filtered = butterworth_bandpass(data, fs)
-    plot_spectrograms(data, filtered, fs)
+    plot_spectrograms(data, filtered, fs, t_offset)
 
 
 if __name__ == "__main__":
