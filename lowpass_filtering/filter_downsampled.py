@@ -180,12 +180,16 @@ def main():
 
     # Lesson 1: designing the 800 Hz filter at the new rate fails
     fs_new = fs / DECIMATION
-    demonstrate_design_error(fs_new)
+    # demonstrate_design_error(fs_new)
 
-    # Filter at the original rate (this works), then decimate naively
-    filtered = butterworth_bandpass(data, fs)
-    filtered_ds = downsample(filtered, DECIMATION)
+    # Downsample
+    data_ds = downsample(data, DECIMATION)
 
+    # Filter with new cutoff frequency
+    filtered_ds = butterworth_bandpass(data_ds, fs_new,
+                                       order= 2,
+                                       f_low=F_LOW, f_high= 499)
+ 
     # Lesson 2: content between 500 and 800 Hz is aliased by the
     # decimation (new Nyquist = 500 Hz).
 
