@@ -79,8 +79,10 @@ def main():
                           args.v, args.f0)
 
     peak_deg = THETA_GRID_DEG[np.argmax(Py)]
+    verdict = ('> 0.5: expect grating lobes!' if aliasing
+               else '< 0.5: no spatial aliasing')
     print(f"Delta = d/lambda = {args.d:.3f} / {lam:.3f} = {Delta:.4f}"
-          f"{'  (>0.5: expect grating lobes!)' if aliasing else '  (<0.5: no spatial aliasing)'}")
+          f"  ({verdict})")
     print(f"Spectrum peak at {peak_deg:+.2f} deg "
           f"(source at {args.theta0:+.1f} deg)")
 
@@ -96,13 +98,19 @@ def main():
 
     # Mark the true source direction
     ax.axvline(args.theta0, color="tab:red", ls=":", lw=1,
-              label=f"source: theta0 = {args.theta0:+.0f} deg")
-    # Show Delta inside the plot
-    ax.text(0.02, 0.97,
-            f"$\\Delta = d/\\lambda = {Delta:.3f}$\n"
-            f"($\\Delta {'>' if aliasing else '\\leq'} 0.5$: "
-            f"{'spatial aliasing' if aliasing else 'no spatial aliasing'}\n"
-            f"\"grating lobes\" {'present' if aliasing else 'absent'})",
+               label=f"source: theta0 = {args.theta0:+.0f} deg")
+
+    # Show Delta inside the plot.
+    # NOTE: keep backslashes out of f-string {expressions}: they are a
+    # SyntaxError on Python < 3.12. Build the LaTeX bits in plain strings
+    # first, then interpolate.
+    leq = r"\leq"
+    delta_txt = "$\\Delta = d/\\lambda = %.3f$" % Delta
+    verdict_txt = ("spatial aliasing (grating lobes!)" if aliasing
+                   else "no spatial aliasing")
+    info = (delta_txt + "\n"
+            + f"$\\Delta {'>' if aliasing else leq} 0.5$: " + verdict_txt)
+    ax.text(0.02, 0.97, info,
             transform=ax.transAxes, va="top", ha="left", fontsize=11,
             bbox=dict(boxstyle="round", fc="lightyellow", ec="0.5"))
 
