@@ -99,7 +99,7 @@ def main():
               label=f"source: theta0 = {args.theta0:+.0f} deg")
     # Show Delta inside the plot
     ax.text(0.02, 0.97,
-            f"$\\Delta = d/\\lambda = {Delta:.3f}$          \n"
+            f"$\\Delta = d/\\lambda = {Delta:.3f}$\n"
             f"($\\Delta {'>' if aliasing else '\\leq'} 0.5$: "
             f"{'spatial aliasing' if aliasing else 'no spatial aliasing'}\n"
             f"\"grating lobes\" {'present' if aliasing else 'absent'})",
